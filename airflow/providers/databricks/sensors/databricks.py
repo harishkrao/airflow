@@ -25,7 +25,7 @@ from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
 
 from airflow.utils.context import Context
 
-class DatabricksSensor(BaseSensorOperator):
+class DatabricksBaseSensor(BaseSensorOperator):
 
     def__init__(
         self,
@@ -36,7 +36,7 @@ class DatabricksSensor(BaseSensorOperator):
         session_configuration = None,
         http_headers: Optional[List[Tuple[str, str]]] = None,
         catalog: Optional[str] = None,
-        schema: Optional[str] = None,
+        database: Optional[str] = None,
         client_parameters: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> None:
@@ -48,7 +48,7 @@ class DatabricksSensor(BaseSensorOperator):
         self.session_config = session_configuration
         self.http_headers = http_headers
         self.catalog = catalog
-        self.schema = schema
+        self.database = database
         self.client_parameters = client_parameters or {}
 
     def _get_hook(self) -> DatabricksSqlHook:
@@ -59,7 +59,7 @@ class DatabricksSensor(BaseSensorOperator):
             self.session_config,
             self.http_headers,
             self.catalog,
-            self.schema,
+            self.database,
             **self.client_parameters,
         )
 
@@ -72,7 +72,7 @@ class DatabricksPartitionTableSensor(DatabricksSensor):
         :param databricks_conn_id (str): Reference to the :ref:`Databricks connection <howto/connection:databricks>`.
     """
     template_fields: Sequence[str] = (
-        'database_name',
+        # 'database_name',
         'table_name',
         'partition_name',
     )
@@ -81,17 +81,18 @@ class DatabricksPartitionTableSensor(DatabricksSensor):
                 databricks_conn_id: str,
                 table_name: str,
                 partition_name: str,
-                database_name: Optional[str] = 'default',
+                catalog: Optional[str] = None,
+                database: Optional[str] = 'default',
                 **kwargs: Any):
         super().__int__(**kwargs)
         self.databricks_conn_id = databricks_conn_id
         self.table_name = table_name
         self.partition_name = partition_name
-        self.database_name = database_name
+        # self.database_name = database_name
 
     def poke(self, context: Context) -> bool:
         hook = self._get_hook()
-        _, result = hook.run(f'SHOW PARTITIONS {self.database_name}.{self.table_name}')
+        _, result = hook.run(f'SHOW PARTITIONS {self.database}.{self.table_name}')
         record = result[0] if result else {}
         return self.partition_name in record
 
@@ -105,7 +106,7 @@ class DatabricksDeltaTableChangeSensor(DatabricksBaseSensor):
         :param databricks_conn_id (str): Reference to the :ref:`Databricks connection <howto/connection:databricks>`.
     """
     template_fields: Sequence[str] = (
-        'database_name',
+        # 'database_name',
         'table_name',
     )
 
@@ -113,20 +114,23 @@ class DatabricksDeltaTableChangeSensor(DatabricksBaseSensor):
                  databricks_conn_id: str,
                  table_name: str,
                  timestamp: datetime,
-                 database_name: Optional[str] = 'default',
+                 catalog: Optional[str] = None,
+                 database: Optional[str] = 'default',
                  **kwargs: Any):
         super().__init__(**kwargs)
         self.databricks_conn_id = databricks_conn_id
+        self.catalog = catalog
+        self.database = database
         self.table_name = table_name
         self.timestamp = timestamp
-        self.database_name = 'default' if not database_name else database_name
+        # self.database_name = 'default' if not database_name else database_name
 
     def poke(self, context: Context) -> bool:
         hook = self._get_hook()
 
         _, results = hook.run(
             f'SELECT COUNT(1) as new_events from (DESCRIBE '
-            f'HISTORY {self.database_name}.{self.table_name}) '
+            f'HISTORY {self.database}.{self.table_name}) '
             f'WHERE timestamp > "{self.timestamp}"')
 
         return results[0].new_events > 0
