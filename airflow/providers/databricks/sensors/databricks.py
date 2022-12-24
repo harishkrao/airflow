@@ -27,7 +27,7 @@ from airflow.utils.context import Context
 
 class DatabricksBaseSensor(BaseSensorOperator):
 
-    def__init__(
+    def __init__(
         self,
         *,
         databricks_conn_id: str = DatabricksSqlHook.default_conn_name,
@@ -63,7 +63,7 @@ class DatabricksBaseSensor(BaseSensorOperator):
             **self.client_parameters,
         )
 
-class DatabricksPartitionTableSensor(DatabricksSensor):
+class DatabricksPartitionTableSensor(DatabricksBaseSensor):
     """
         Waits for a partition to show up in Databricks.
         :param table_name (str): The name of the table to wait for.
