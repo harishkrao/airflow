@@ -22,10 +22,11 @@ from typing import Dict, Any, List, Optional, Sequence, Tuple
 from datetime import datetime
 from airflow.sensors.base import BaseSensorOperator
 from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
+from airflow.exceptions import AirflowException
 
 from airflow.utils.context import Context
 
-class DatabricksBaseSensor(BaseSensorOperator):
+class DatabricksSQLSensor(BaseSensorOperator):
 
     def __init__(
         self,
@@ -62,6 +63,43 @@ class DatabricksBaseSensor(BaseSensorOperator):
             self.database,
             **self.client_parameters,
         )
+
+    @staticmethod
+    def get_previous_version(context: Context, lookup_key):
+        return context['ti'].xcom_pull(key=lookup_key, include_prior_dates=True)
+
+    @staticmethod
+    def set_version(context: Context, lookup_key, version):
+        context['ti'].xcom_push(key=lookup_key, value=version)
+
+    template_fields = Sequence[str] = (
+        'table_name',
+        'partition_name',
+    )
+
+    def poke(self, context: Context) -> bool:
+        table_full_name = f"{self.schema}.{self.table}"
+        try:
+            version = self._get_hook().get_table_version(self.schema, self.table)
+            self.log.info(f"Version for {table_full_name} is {version}")
+            prev_version = -1
+            if context is not None:
+                lookup_key = self.get_previous_version(context, lookup_key)
+            self.log.debug(f"prev_data: {str(prev_data)}, type={type(prev_data)}")
+            if isinstance(prev_data, int):
+                prev_version = prev_data
+            elif prev_data is not None:
+                raise AirflowException(f"Incorrect type for previous XCom Data: {type(prev_data)}")
+            if prev_version != version:
+                self.set_version(context, lookup_key, version)
+
+            return prev_version < version
+        except AirflowException as exc:
+            if str(exc).__contains__("Status Code: 404"):
+                return False
+
+            raise exc
+
 
 class DatabricksPartitionTableSensor(DatabricksBaseSensor):
     """
