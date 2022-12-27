@@ -206,6 +206,20 @@ class DatabricksSqlHook(BaseDatabricksHook, DbApiHook):
         else:
             return results
 
+    @staticmethod
+    def _extract_delta_table_version(response, item_name: str) -> int:
+        version = None
+        for k, v in response.headers.lower_items():
+            if k == 'delta-table-version':
+                version = v
+        if version is None:
+            raise AirflowException(f"No delta-table-version in response for {item_name}")
+        return int(version)
+
+    def get_table_version(self, schema, table):
+        response = self._do_api_call(f"shares/{share}/schemas/tables/{table}", http_method='HEAD',)
+        return self._extract_delta_table_version(response, f"{schema}.{table}")
+
     def bulk_dump(self, table, tmp_file):
         raise NotImplementedError()
 
