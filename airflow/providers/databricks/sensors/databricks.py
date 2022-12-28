@@ -20,11 +20,16 @@
 
 from typing import Dict, Any, List, Optional, Sequence, Tuple
 from datetime import datetime
+import re
 from airflow.sensors.base import BaseSensorOperator
 from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
 from airflow.exceptions import AirflowException
 
 from airflow.utils.context import Context
+
+# DatabricksPartitionTableSensor
+# DatabricksDeltaTableChangeSensor
+
 
 class DatabricksSQLSensor(BaseSensorOperator):
 
@@ -37,7 +42,10 @@ class DatabricksSQLSensor(BaseSensorOperator):
         session_configuration = None,
         http_headers: Optional[List[Tuple[str, str]]] = None,
         catalog: Optional[str] = None,
-        database: Optional[str] = None,
+        schema: Optional[str] = 'default',
+        table_name: str = None,
+        partition_name: Optional[str] = None,
+        db_sensor_type: str = None,
         client_parameters: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> None:
@@ -49,7 +57,10 @@ class DatabricksSQLSensor(BaseSensorOperator):
         self.session_config = session_configuration
         self.http_headers = http_headers
         self.catalog = catalog
-        self.database = database
+        self.schema = 'default' if not schema else schema
+        self.table_name = table_name
+        self.partition_name = partition_name
+        self.db_sensor_type = db_sensor_type
         self.client_parameters = client_parameters or {}
 
     def _get_hook(self) -> DatabricksSqlHook:
@@ -60,115 +71,60 @@ class DatabricksSQLSensor(BaseSensorOperator):
             self.session_config,
             self.http_headers,
             self.catalog,
-            self.database,
-            **self.client_parameters,
+            self.schema,
+            **self.client_parameters
         )
 
-    @staticmethod
-    def get_previous_version(context: Context, lookup_key):
-        return context['ti'].xcom_pull(key=lookup_key, include_prior_dates=True)
-
-    @staticmethod
-    def set_version(context: Context, lookup_key, version):
-        context['ti'].xcom_push(key=lookup_key, value=version)
+    # @staticmethod
+    # def get_previous_version(context: Context, lookup_key):
+    #     return context['ti'].xcom_pull(key=lookup_key, include_prior_dates=True)
+    #
+    # @staticmethod
+    # def set_version(context: Context, lookup_key, version):
+    #     context['ti'].xcom_push(key=lookup_key, value=version)
 
     template_fields = Sequence[str] = (
         'table_name',
+        'schema',
         'partition_name',
     )
 
-    def poke(self, context: Context) -> bool:
-        table_full_name = f"{self.schema}.{self.table}"
-        try:
-            version = self._get_hook().get_table_version(self.schema, self.table)
-            self.log.info(f"Version for {table_full_name} is {version}")
-            prev_version = -1
-            if context is not None:
-                lookup_key = self.get_previous_version(context, lookup_key)
-            self.log.debug(f"prev_data: {str(prev_data)}, type={type(prev_data)}")
-            if isinstance(prev_data, int):
-                prev_version = prev_data
-            elif prev_data is not None:
-                raise AirflowException(f"Incorrect type for previous XCom Data: {type(prev_data)}")
-            if prev_version != version:
-                self.set_version(context, lookup_key, version)
-
-            return prev_version < version
-        except AirflowException as exc:
-            if str(exc).__contains__("Status Code: 404"):
-                return False
-
-            raise exc
-
-
-class DatabricksPartitionTableSensor(DatabricksBaseSensor):
-    """
-        Waits for a partition to show up in Databricks.
-        :param table_name (str): The name of the table to wait for.
-        :param partition_name (str): The partition clause to wait for.
-        :param database_name (str): The name of the database in Databricks. It uses 'default' if nothing is provided
-        :param databricks_conn_id (str): Reference to the :ref:`Databricks connection <howto/connection:databricks>`.
-    """
-    template_fields: Sequence[str] = (
-        # 'database_name',
-        'table_name',
-        'partition_name',
-    )
-
-    def __int__(self, *,
-                databricks_conn_id: str,
-                table_name: str,
-                partition_name: str,
-                catalog: Optional[str] = None,
-                database: Optional[str] = 'default',
-                **kwargs: Any):
-        super().__int__(**kwargs)
-        self.databricks_conn_id = databricks_conn_id
-        self.table_name = table_name
-        self.partition_name = partition_name
-        # self.database_name = database_name
+    # def poke(self, context: Context) -> bool:
+    #     table_full_name = f"{self.schema}.{self.table}"
+    #     try:
+    #         version = self._get_hook().get_table_version(self.schema, self.table)
+    #         self.log.info(f"Version for {table_full_name} is {version}")
+    #         prev_version = -1
+    #         if context is not None:
+    #             lookup_key = re.sub("[^[a-zA-Z0-9]+", "_", self.hook.sql_endpoint_name + table_full_name)
+    #             prev_data = self.get_previous_version(context, lookup_key)
+    #         self.log.debug(f"prev_data: {str(prev_data)}, type={type(prev_data)}")
+    #         if isinstance(prev_data, int):
+    #             prev_version = prev_data
+    #         elif prev_data is not None:
+    #             raise AirflowException(f"Incorrect type for previous XCom Data: {type(prev_data)}")
+    #         if prev_version != version:
+    #             self.set_version(context, lookup_key, version)
+    #
+    #         return prev_version < version
+    #     except AirflowException as exc:
+    #         if str(exc).__contains__("Status Code: 404"):
+    #             return False
+    #
+    #         raise exc
 
     def poke(self, context: Context) -> bool:
         hook = self._get_hook()
-        _, result = hook.run(f'SHOW PARTITIONS {self.database}.{self.table_name}')
-        record = result[0] if result else {}
-        return self.partition_name in record
+        if self.db_sensor_type == "table_partition":
+            _, result = hook.run(f'SHOW PARTITIONS {self.schema}.{self.table_name}')
+            record = result[0] if result else {}
+            return self.partition_name in record
+        elif self.db_sensor_type == "table_changes":
+            _, results = hook.run(
+                f'SELECT COUNT(1) as new_events from (DESCRIBE '
+                f'HISTORY {self.schema}.{self.table_name}) '
+                f'WHERE timestamp > "{self.timestamp}"')
 
-
-class DatabricksDeltaTableChangeSensor(DatabricksBaseSensor):
-    """
-        Waits for Delta table event
-        :param table_name (str): The name of the table to wait for, supports the dot
-        :param timestamp (datetime): The timestamp that will be used to filter new events.
-        :param database (Optional[str]): The name of the database in Databrick. It uses 'default' if nothing is provided
-        :param databricks_conn_id (str): Reference to the :ref:`Databricks connection <howto/connection:databricks>`.
-    """
-    template_fields: Sequence[str] = (
-        # 'database_name',
-        'table_name',
-    )
-
-    def __init__(self, *,
-                 databricks_conn_id: str,
-                 table_name: str,
-                 timestamp: datetime,
-                 catalog: Optional[str] = None,
-                 database: Optional[str] = 'default',
-                 **kwargs: Any):
-        super().__init__(**kwargs)
-        self.databricks_conn_id = databricks_conn_id
-        self.catalog = catalog
-        self.database = database
-        self.table_name = table_name
-        self.timestamp = timestamp
-        # self.database_name = 'default' if not database_name else database_name
-
-    def poke(self, context: Context) -> bool:
-        hook = self._get_hook()
-
-        _, results = hook.run(
-            f'SELECT COUNT(1) as new_events from (DESCRIBE '
-            f'HISTORY {self.database}.{self.table_name}) '
-            f'WHERE timestamp > "{self.timestamp}"')
-
-        return results[0].new_events > 0
+            return results[0].new_events > 0
+        else:
+            return False
