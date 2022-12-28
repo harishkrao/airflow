@@ -27,9 +27,6 @@ from airflow.exceptions import AirflowException
 
 from airflow.utils.context import Context
 
-# DatabricksPartitionTableSensor
-# DatabricksDeltaTableChangeSensor
-
 
 class DatabricksSQLSensor(BaseSensorOperator):
 
@@ -43,9 +40,10 @@ class DatabricksSQLSensor(BaseSensorOperator):
         http_headers: Optional[List[Tuple[str, str]]] = None,
         catalog: Optional[str] = None,
         schema: Optional[str] = 'default',
-        table_name: str = None,
+        table_name: str,
         partition_name: Optional[str] = None,
-        db_sensor_type: str = None,
+        db_sensor_type: str,
+        timestamp: datetime,
         client_parameters: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> None:
@@ -61,6 +59,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
         self.table_name = table_name
         self.partition_name = partition_name
         self.db_sensor_type = db_sensor_type
+        self.timestamp = timestamp
         self.client_parameters = client_parameters or {}
 
     def _get_hook(self) -> DatabricksSqlHook:
@@ -83,7 +82,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
     # def set_version(context: Context, lookup_key, version):
     #     context['ti'].xcom_push(key=lookup_key, value=version)
 
-    template_fields = Sequence[str] = (
+    template_fields: Sequence[str] = (
         'table_name',
         'schema',
         'partition_name',
@@ -120,11 +119,11 @@ class DatabricksSQLSensor(BaseSensorOperator):
             record = result[0] if result else {}
             return self.partition_name in record
         elif self.db_sensor_type == "table_changes":
-            _, results = hook.run(
+            _, result = hook.run(
                 f'SELECT COUNT(1) as new_events from (DESCRIBE '
                 f'HISTORY {self.schema}.{self.table_name}) '
                 f'WHERE timestamp > "{self.timestamp}"')
 
-            return results[0].new_events > 0
+            return result[0].new_events > 0
         else:
             return False
