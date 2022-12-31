@@ -18,13 +18,13 @@
 #
 """This module contains Databricks sensors."""
 
-from typing import Dict, Any, List, Optional, Sequence, Tuple
+from typing import Dict, Any, List, Optional, Sequence, Tuple, Iterable, Callable
 from datetime import datetime
 import re
 from airflow.sensors.base import BaseSensorOperator
 from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
 from airflow.exceptions import AirflowException
-
+from airflow.providers.common.sql.hooks.sql import fetch_all_handler
 from airflow.utils.context import Context
 
 
@@ -42,8 +42,10 @@ class DatabricksSQLSensor(BaseSensorOperator):
         schema: Optional[str] = 'default',
         table_name: str,
         partition_name: Optional[str] = None,
+        handler: Callable[[Any], Any] = fetch_all_handler,
         db_sensor_type: str,
         timestamp: datetime,
+        caller: str = 'DatabricksSQLSensor',
         client_parameters: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> None:
@@ -60,7 +62,10 @@ class DatabricksSQLSensor(BaseSensorOperator):
         self.partition_name = partition_name
         self.db_sensor_type = db_sensor_type
         self.timestamp = timestamp
+        self.caller = caller
         self.client_parameters = client_parameters or {}
+        self.hook_params = kwargs.pop("hook_params", {})
+        self.handler = handler
 
     def _get_hook(self) -> DatabricksSqlHook:
         return DatabricksSqlHook(
@@ -71,7 +76,9 @@ class DatabricksSQLSensor(BaseSensorOperator):
             self.http_headers,
             self.catalog,
             self.schema,
-            **self.client_parameters
+            self.caller,
+            **self.client_parameters,
+            **self.hook_params,
         )
 
     # @staticmethod
@@ -115,14 +122,20 @@ class DatabricksSQLSensor(BaseSensorOperator):
     def poke(self, context: Context) -> bool:
         hook = self._get_hook()
         if self.db_sensor_type == "table_partition":
-            _, result = hook.run(f'SHOW PARTITIONS {self.schema}.{self.table_name}')
+            # _, result = hook.run(f'SHOW PARTITIONS {self.schema}.{self.table_name}')
+            self.log.info(f'SHOW PARTITIONS {self.schema}.{self.table_name}')
+            result = hook.run(f'SHOW PARTITIONS {self.schema}.{self.table_name}',
+                              handler=self.handler if self.do_xcom_push else None,)
+            self.log.info(f"Partition info: {result}, {len(result)}")
             record = result[0] if result else {}
             return self.partition_name in record
+            # return True
         elif self.db_sensor_type == "table_changes":
             _, result = hook.run(
                 f'SELECT COUNT(1) as new_events from (DESCRIBE '
                 f'HISTORY {self.schema}.{self.table_name}) '
-                f'WHERE timestamp > "{self.timestamp}"')
+                f'WHERE timestamp > "{self.timestamp}"',
+                handler=self.handler if self.do_xcom_push else None)
 
             return result[0].new_events > 0
         else:
