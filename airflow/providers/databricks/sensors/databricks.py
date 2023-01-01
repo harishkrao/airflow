@@ -87,7 +87,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
             f"SHOW PARTITIONS {self.schema}.{self.table_name}",
             handler=self.handler if self.do_xcom_push else None,
         )
-        self.log.info(f"Query result: {result}")
+        self.log.info(f"Executed sensor query to check partitions.")
         if len(self.partition_names) > 0:
             for partition in self.partition_names:
                 if partition not in result[0]:
@@ -103,7 +103,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
             f'WHERE timestamp > "{self.timestamp}"',
             handler=self.handler if self.do_xcom_push else None,
         )
-        self.log.info(f"Query result: {result}")
+        self.log.info(f"Executed sensor query for table changes.")
         return result[0].new_events > 0
 
     # @staticmethod
