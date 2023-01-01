@@ -117,7 +117,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
     template_fields: Sequence[str] = (
         "table_name",
         "schema",
-        "partition_name",
+        "partition_names",
     )
 
     # def poke(self, context: Context) -> bool:
