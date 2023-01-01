@@ -41,7 +41,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
         catalog: Optional[str] = None,
         schema: Optional[str] = 'default',
         table_name: str,
-        partition_name: Optional[str] = None,
+        partition_name: Optional[Dict[str, Any]] = None,
         handler: Callable[[Any], Any] = fetch_all_handler,
         db_sensor_type: str,
         timestamp: datetime,
@@ -122,21 +122,24 @@ class DatabricksSQLSensor(BaseSensorOperator):
     def poke(self, context: Context) -> bool:
         hook = self._get_hook()
         if self.db_sensor_type == "table_partition":
-            # _, result = hook.run(f'SHOW PARTITIONS {self.schema}.{self.table_name}')
-            self.log.info(f'SHOW PARTITIONS {self.schema}.{self.table_name}')
             result = hook.run(f'SHOW PARTITIONS {self.schema}.{self.table_name}',
                               handler=self.handler if self.do_xcom_push else None,)
-            self.log.info(f"Partition info: {result}, {len(result)}")
-            record = result[0] if result else {}
-            return self.partition_name in record
-            # return True
+            if not isinstance(self.partition_name, list):
+                raise AirflowException("Partition names must be specified as a list, even for single values.")
+            if len(self.partition_name) > 0:
+                for partition in self.partition_name:
+                    if partition not in result:
+                        return False
+                return True
+            else:
+                raise AirflowException("At least one partition name required for comparison!")
         elif self.db_sensor_type == "table_changes":
-            _, result = hook.run(
-                f'SELECT COUNT(1) as new_events from (DESCRIBE '
+            result = hook.run(
+                f'SELECT COUNT(version) as new_events from (DESCRIBE '
                 f'HISTORY {self.schema}.{self.table_name}) '
                 f'WHERE timestamp > "{self.timestamp}"',
                 handler=self.handler if self.do_xcom_push else None)
-
+            self.log.info(f"Query result: {result}")
             return result[0].new_events > 0
         else:
             return False
