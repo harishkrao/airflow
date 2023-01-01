@@ -18,7 +18,7 @@
 #
 """This module contains Databricks sensors."""
 
-from typing import Dict, Any, List, Optional, Sequence, Tuple, Iterable, Callable
+from typing import Dict, Any, List, Optional, Sequence, Tuple, TYPE_CHECKING, Callable
 from datetime import datetime
 import re
 from airflow.sensors.base import BaseSensorOperator
@@ -26,7 +26,6 @@ from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
 from airflow.exceptions import AirflowException
 from airflow.providers.common.sql.hooks.sql import fetch_all_handler
 from airflow.utils.context import Context
-
 
 class DatabricksSQLSensor(BaseSensorOperator):
     def __init__(
@@ -80,7 +79,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
             **self.hook_params,
         )
 
-    def _check_table_partitions(self, hook) -> bool:
+    def _check_table_partitions(self, hook, context) -> bool:
         if not isinstance(self.partition_names, list):
             raise AirflowException("Partition names must be specified as a list, even for single values.")
         result = hook.run(
@@ -96,7 +95,8 @@ class DatabricksSQLSensor(BaseSensorOperator):
         else:
             raise AirflowException("At least one partition name required for comparison!")
 
-    def _check_table_changes(self, hook) -> bool:
+    def _check_table_changes(self, hook, context) -> bool:
+        self.log.info(f"Context: {dir(context['ti'])}")
         result = hook.run(
             f"SELECT COUNT(version) as new_events from (DESCRIBE "
             f"HISTORY {self.schema}.{self.table_name}) "
@@ -147,8 +147,8 @@ class DatabricksSQLSensor(BaseSensorOperator):
     def poke(self, context: Context) -> bool:
         hook = self._get_hook()
         if self.db_sensor_type == "table_partition":
-            return self._check_table_partitions(hook)
+            return self._check_table_partitions(hook, context)
         elif self.db_sensor_type == "table_changes":
-            return self._check_table_changes(hook)
+            return self._check_table_changes(hook, context)
         else:
             return False
