@@ -29,23 +29,22 @@ from airflow.utils.context import Context
 
 
 class DatabricksSQLSensor(BaseSensorOperator):
-
     def __init__(
         self,
         *,
         databricks_conn_id: str = DatabricksSqlHook.default_conn_name,
         http_path: Optional[str] = None,
         sql_endpoint_name: Optional[str] = None,
-        session_configuration = None,
+        session_configuration=None,
         http_headers: Optional[List[Tuple[str, str]]] = None,
         catalog: Optional[str] = None,
-        schema: Optional[str] = 'default',
+        schema: Optional[str] = "default",
         table_name: str,
-        partition_name: Optional[Dict[str, Any]] = None,
+        partition_names: Optional[List[Any]] = None,
         handler: Callable[[Any], Any] = fetch_all_handler,
         db_sensor_type: str,
         timestamp: datetime,
-        caller: str = 'DatabricksSQLSensor',
+        caller: str = "DatabricksSQLSensor",
         client_parameters: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> None:
@@ -57,9 +56,9 @@ class DatabricksSQLSensor(BaseSensorOperator):
         self.session_config = session_configuration
         self.http_headers = http_headers
         self.catalog = catalog
-        self.schema = 'default' if not schema else schema
+        self.schema = "default" if not schema else schema
         self.table_name = table_name
-        self.partition_name = partition_name
+        self.partition_names = partition_names
         self.db_sensor_type = db_sensor_type
         self.timestamp = timestamp
         self.caller = caller
@@ -81,6 +80,32 @@ class DatabricksSQLSensor(BaseSensorOperator):
             **self.hook_params,
         )
 
+    def _check_table_partitions(self, hook) -> bool:
+        if not isinstance(self.partition_names, list):
+            raise AirflowException("Partition names must be specified as a list, even for single values.")
+        result = hook.run(
+            f"SHOW PARTITIONS {self.schema}.{self.table_name}",
+            handler=self.handler if self.do_xcom_push else None,
+        )
+        self.log.info(f"Query result: {result}")
+        if len(self.partition_names) > 0:
+            for partition in self.partition_names:
+                if partition not in result[0]:
+                    return False
+            return True
+        else:
+            raise AirflowException("At least one partition name required for comparison!")
+
+    def _check_table_changes(self, hook) -> bool:
+        result = hook.run(
+            f"SELECT COUNT(version) as new_events from (DESCRIBE "
+            f"HISTORY {self.schema}.{self.table_name}) "
+            f'WHERE timestamp > "{self.timestamp}"',
+            handler=self.handler if self.do_xcom_push else None,
+        )
+        self.log.info(f"Query result: {result}")
+        return result[0].new_events > 0
+
     # @staticmethod
     # def get_previous_version(context: Context, lookup_key):
     #     return context['ti'].xcom_pull(key=lookup_key, include_prior_dates=True)
@@ -90,9 +115,9 @@ class DatabricksSQLSensor(BaseSensorOperator):
     #     context['ti'].xcom_push(key=lookup_key, value=version)
 
     template_fields: Sequence[str] = (
-        'table_name',
-        'schema',
-        'partition_name',
+        "table_name",
+        "schema",
+        "partition_name",
     )
 
     # def poke(self, context: Context) -> bool:
@@ -122,24 +147,8 @@ class DatabricksSQLSensor(BaseSensorOperator):
     def poke(self, context: Context) -> bool:
         hook = self._get_hook()
         if self.db_sensor_type == "table_partition":
-            result = hook.run(f'SHOW PARTITIONS {self.schema}.{self.table_name}',
-                              handler=self.handler if self.do_xcom_push else None,)
-            if not isinstance(self.partition_name, list):
-                raise AirflowException("Partition names must be specified as a list, even for single values.")
-            if len(self.partition_name) > 0:
-                for partition in self.partition_name:
-                    if partition not in result:
-                        return False
-                return True
-            else:
-                raise AirflowException("At least one partition name required for comparison!")
+            return self._check_table_partitions(hook)
         elif self.db_sensor_type == "table_changes":
-            result = hook.run(
-                f'SELECT COUNT(version) as new_events from (DESCRIBE '
-                f'HISTORY {self.schema}.{self.table_name}) '
-                f'WHERE timestamp > "{self.timestamp}"',
-                handler=self.handler if self.do_xcom_push else None)
-            self.log.info(f"Query result: {result}")
-            return result[0].new_events > 0
+            return self._check_table_changes(hook)
         else:
             return False
