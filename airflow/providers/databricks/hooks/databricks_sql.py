@@ -32,22 +32,21 @@ LIST_SQL_ENDPOINTS_ENDPOINT = ("GET", "api/2.0/sql/endpoints")
 
 class DatabricksSqlHook(BaseDatabricksHook, DbApiHook):
     """
-    Hook to interact with Databricks SQL.
+    Hook to interact with Databricks SQL based on specified conditions.
 
     :param databricks_conn_id: Reference to the
         :ref:`Databricks connection <howto/connection:databricks>`.
     :param http_path: Optional string specifying HTTP path of Databricks SQL Endpoint or cluster.
         If not specified, it should be either specified in the Databricks connection's extra parameters,
         or ``sql_endpoint_name`` must be specified.
-    :param sql_endpoint_name: Optional name of Databricks SQL Endpoint. If not specified, ``http_path``
+    :param sql_endpoint_name: SQL Warehouse name on Databricks. If not specified, ``http_path``
         must be provided as described above.
     :param session_configuration: An optional dictionary of Spark session parameters. Defaults to None.
         If not specified, it could be specified in the Databricks connection's extra parameters.
     :param http_headers: An optional list of (k, v) pairs that will be set as HTTP headers
         on every request
-    :param catalog: An optional initial catalog to use. Requires DBR version 9.0+
-    :param schema: An optional initial schema to use. Requires DBR version 9.0+
-    :param kwargs: Additional parameters internal to Databricks SQL Connector parameters
+    :param catalog: Databricks catalog name. Requires DBR version 9.0+
+    :param schema: Databricks schema name. Requires DBR version 9.0+
     """
 
     hook_name = "Databricks SQL"
@@ -205,20 +204,6 @@ class DatabricksSqlHook(BaseDatabricksHook, DbApiHook):
             return results[-1]
         else:
             return results
-
-    @staticmethod
-    def _extract_delta_table_version(response, item_name: str) -> int:
-        version = None
-        for k, v in response.headers.lower_items():
-            if k == 'delta-table-version':
-                version = v
-        if version is None:
-            raise AirflowException(f"No delta-table-version in response for {item_name}")
-        return int(version)
-
-    def get_table_version(self, schema, table):
-        response = self._do_api_call(f"shares/{share}/schemas/tables/{table}", http_method='HEAD',)
-        return self._extract_delta_table_version(response, f"{schema}.{table}")
 
     def bulk_dump(self, table, tmp_file):
         raise NotImplementedError()
