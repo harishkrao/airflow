@@ -128,6 +128,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
         )
         partition_name_str = self._partition_concatenate(self.partition_name)
         result_str = self._partition_concatenate(result)
+        self.log.info(partition_name_str, result_str)
 
         # if len(result) < 1:
         #     raise AirflowException(
