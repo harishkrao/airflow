@@ -156,7 +156,6 @@ class DatabricksSQLSensor(BaseSensorOperator):
     )
 
     def poke(self, context: Context) -> bool:
-        hook = self._get_hook()
         if self.db_sensor_type == "table_partition":
             return self._check_table_partitions()
         elif self.db_sensor_type == "table_changes":
