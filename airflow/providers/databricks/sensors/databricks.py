@@ -64,7 +64,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
         catalog: str = "",
         schema: str | None = "default",
         table_name: str,
-        partition_name: {"date": "2023-1-1"},
+        partition_name: dict = {"date": "2023-1-1"},
         handler: Callable[[Any], Any] = fetch_all_handler,
         db_sensor_type: str,
         timestamp: datetime = datetime.now() - timedelta(days=7),
