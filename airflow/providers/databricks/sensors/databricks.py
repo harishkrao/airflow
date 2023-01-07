@@ -64,7 +64,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
         catalog: str = "",
         schema: str | None = "default",
         table_name: str,
-        partition_name: list | None = None,
+        partition_name: dict | None = None,
         handler: Callable[[Any], Any] = fetch_all_handler,
         db_sensor_type: str,
         timestamp: datetime = datetime.now() - timedelta(days=7),
@@ -103,58 +103,48 @@ class DatabricksSQLSensor(BaseSensorOperator):
             **self.hook_params,
         )
 
-    @staticmethod
-    def _partition_concatenate(partition_values) -> str:
-        # TODO: Add loop for multiple partition items returned from the delta table.
-        if isinstance(partition_values, list):
-            raise AirflowException("Please supply a list of values.")
-        if len(partition_values) >= 1:
-            for value in partition_values:
-                if isinstance(value, datetime):
-                    value = value.strftime("%Y-%m-%d")
-                elif isinstance(value, (int, float, complex)):
-                    value = str(value)
-                partition_values.append(value)
-        partition_str = ", ".join(partition_values)
-        return partition_str
-
-    def _check_table_partitions(self, hook) -> bool:
-        if self.catalog is not None:
-            complete_table_name = str(self.catalog + "." + self.schema + "." + self.table_name)
-            self.log.info("Table name generated from arguments: %s", complete_table_name)
-        result = hook.run(
-            f"SHOW PARTITIONS {complete_table_name}",
+    def _generic_sql_sensor(self, sql):
+        hook = self._get_hook()
+        sql_result = hook.run(
+            sql,
             handler=self.handler if self.do_xcom_push else None,
         )
-        partition_name_str = self._partition_concatenate(self.partition_name)
-        result_str = self._partition_concatenate(result)
-        self.log.info(partition_name_str, result_str)
+        return sql_result
 
-        # if len(result) < 1:
-        #     raise AirflowException(
-        #         "Table did not have partitions, please check if "
-        #         "partitions are defined or if data exists in the table."
-        #     )
-        # self.log.debug("Executed sensor query to check partitions and received response %s", result)
-        # record = result[0]
-        # return self.partition_name in record
-
-        return True
-
-    def _check_table_changes(self, hook) -> bool:
+    def _check_table_partitions(self) -> bool:
         if self.catalog is not None:
             complete_table_name = str(self.catalog + "." + self.schema + "." + self.table_name)
             self.log.info("Table name generated from arguments: %s", complete_table_name)
         else:
             raise AirflowException("Catalog name not specified, aborting query execution.")
-        result = hook.run(
-            f"""SELECT COUNT(version) as versions from
+        partitions_list = []
+        self.log.info(self.partition_name)
+        for col, partition_value in self.partition_name.items():
+            if isinstance(partition_value, (int, float, complex)):
+                partitions_list.append(f"""{col}={partition_value}""")
+            else:
+                partitions_list.append(f"""{col}=\"{partition_value}\"""")
+        partitions = " AND ".join(partitions_list)
+        partition_sql = f"SELECT 1 FROM {complete_table_name} WHERE {partitions}"
+        result = self._generic_sql_sensor(partition_sql)
+        self.log.info("result: %s", result)
+        if result[0][0] == 1:
+            return True
+        else:
+            return False
+
+    def _check_table_changes(self) -> bool:
+        if self.catalog is not None:
+            complete_table_name = str(self.catalog + "." + self.schema + "." + self.table_name)
+            self.log.info("Table name generated from arguments: %s", complete_table_name)
+        else:
+            raise AirflowException("Catalog name not specified, aborting query execution.")
+        change_sql = f"""SELECT COUNT(version) as versions from
         (DESCRIBE HISTORY {complete_table_name})
-        WHERE timestamp >= \'{self.timestamp}\'""",
-            handler=self.handler if self.do_xcom_push else None,
-        )
-        result_value = result[0][0]
-        if result_value > 0:
+        WHERE timestamp >= \'{self.timestamp}\'"""
+        result = self._generic_sql_sensor(change_sql)
+
+        if result:
             return True
         else:
             return False
@@ -168,7 +158,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
     def poke(self, context: Context) -> bool:
         hook = self._get_hook()
         if self.db_sensor_type == "table_partition":
-            return self._check_table_partitions(hook)
+            return self._check_table_partitions()
         elif self.db_sensor_type == "table_changes":
-            return self._check_table_changes(hook)
+            return self._check_table_changes()
         return False
