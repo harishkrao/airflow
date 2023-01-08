@@ -17,6 +17,7 @@
 # under the License.
 #
 from __future__ import annotations
+
 from datetime import datetime, timedelta
 
 DEFAULT_CONN_ID = "databricks_default"
