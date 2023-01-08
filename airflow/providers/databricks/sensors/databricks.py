@@ -111,12 +111,29 @@ class DatabricksSQLSensor(BaseSensorOperator):
         )
         return sql_result
 
+    @staticmethod
+    def get_previous_version(context: Context, lookup_key):
+        return context["ti"].xcom_pull(key=lookup_key, include_prior_dates=True)
+
+    @staticmethod
+    def set_version(context: Context, lookup_key, version):
+        context["ti"].xcom_push(key=lookup_key, value=version)
+
     def _check_table_partitions(self) -> bool:
         if self.catalog is not None:
             complete_table_name = str(self.catalog + "." + self.schema + "." + self.table_name)
             self.log.info("Table name generated from arguments: %s", complete_table_name)
         else:
             raise AirflowException("Catalog name not specified, aborting query execution.")
+        table_partitions = [
+            partition_val[0]
+            for partition_val in self._generic_sql_sensor(f"SHOW PARTITIONS {complete_table_name}")
+        ]
+        self.log.info("Table partitions: %s", table_partitions)
+        self.log.info("Partition names: %s", self.partition_name.values())
+        for partition_col in self.partition_name.values():
+            if partition_col not in table_partitions:
+                raise AirflowException("Partition %s not found in %s", partition_col, complete_table_name)
         partitions_list = []
         self.log.info(self.partition_name)
         for col, partition_value in self.partition_name.items():
@@ -133,21 +150,32 @@ class DatabricksSQLSensor(BaseSensorOperator):
         else:
             return False
 
-    def _check_table_changes(self) -> bool:
+    def _check_table_changes(self, context: Context) -> bool:
         if self.catalog is not None:
             complete_table_name = str(self.catalog + "." + self.schema + "." + self.table_name)
             self.log.info("Table name generated from arguments: %s", complete_table_name)
         else:
             raise AirflowException("Catalog name not specified, aborting query execution.")
-        change_sql = f"""SELECT COUNT(version) as versions from
-        (DESCRIBE HISTORY {complete_table_name})
-        WHERE timestamp >= \'{self.timestamp}\'"""
-        result = self._generic_sql_sensor(change_sql)
-
-        if result:
-            return True
-        else:
-            return False
+        prev_version = -1
+        if context is not None:
+            lookup_key = complete_table_name
+            prev_data = self.get_previous_version(lookup_key=lookup_key, context=context)
+            self.log.info("prev_data: %s, type=%s", str(prev_data), type(prev_data))
+            if isinstance(prev_data, int):
+                prev_version = prev_data
+            elif prev_data is not None:
+                raise AirflowException("Incorrect type for previous XCom data: %s", type(prev_data))
+            change_sql = (
+                f"SELECT COUNT(version) as versions from "
+                f"(DESCRIBE HISTORY {complete_table_name}) "
+                f"WHERE timestamp >= '{self.timestamp}'"
+            )
+            version = self._generic_sql_sensor(change_sql)[0][0]
+            self.log.info("Version: %s", version)
+            result = prev_version <= version
+            if prev_version != version:
+                self.set_version(lookup_key=lookup_key, version=version, context=context)
+            return result
 
     template_fields: Sequence[str] = (
         "table_name",
@@ -159,5 +187,5 @@ class DatabricksSQLSensor(BaseSensorOperator):
         if self.db_sensor_type == "table_partition":
             return self._check_table_partitions()
         elif self.db_sensor_type == "table_changes":
-            return self._check_table_changes()
-        return False
+            return self._check_table_changes(context)
+        return True
