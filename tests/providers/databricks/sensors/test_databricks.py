@@ -17,14 +17,7 @@
 # under the License.
 #
 from __future__ import annotations
-
-import unittest
 from datetime import datetime, timedelta
-from unittest import mock
-
-from databricks.sql.types import Row
-
-from airflow.providers.databricks.sensors.databricks import DatabricksSQLSensor
 
 DEFAULT_CONN_ID = "databricks_default"
 
@@ -32,5 +25,5 @@ TIMESTAMP_TEST = datetime.now() - timedelta(days=30)
 
 # class TestDatabricksSQLSensor(unittest.TestCase):
 
-    # @mock.path('airflow.providers.databricks.sensors.databricks.DatabricksSQLSensor')
-    # def test_exec_
+# @mock.path('airflow.providers.databricks.sensors.databricks.DatabricksSQLSensor')
+# def test_exec_
