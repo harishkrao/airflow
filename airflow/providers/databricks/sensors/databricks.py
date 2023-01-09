@@ -32,7 +32,7 @@ from airflow.utils.context import Context
 
 class DatabricksSQLSensor(BaseSensorOperator):
     """
-    Sensor to check for specified conditions on Databricks Delta tables.
+    Generic Databricks SQL sensor.
 
     :param databricks_conn_id:str=DatabricksSqlHook.default_conn_name: Specify the name of the connection
     to use with Databricks on Airflow
@@ -43,7 +43,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
     :param catalog:str|None=None: Specify the catalog to use for the query
     :param schema:str|None="default": Specify the schema of the table to be queried
     :param table_name:str: Specify the table that we want to monitor
-    :param partition_name:str|: Pass in the partition name to be used for the sensor
+    :param partition_name:dict|: Pass in the partition name to be used for the sensor
     :param handler:Callable[[Any, Any]=fetch_all_handler: Define the handler function that will be used
     to process the results of a query
     :param db_sensor_type:str: Choose the sensor you want to use. Available options: table_partition,
@@ -104,6 +104,14 @@ class DatabricksSQLSensor(BaseSensorOperator):
         )
 
     def _generic_sql_sensor(self, sql):
+        """Runs SQL commands in Databricks SQL Warehouse.
+
+        Args:
+            sql (_type_): SQL query
+
+        Returns:
+            Any: SQL query results, mixed type.
+        """
         hook = self._get_hook()
         sql_result = hook.run(
             sql,
@@ -113,34 +121,49 @@ class DatabricksSQLSensor(BaseSensorOperator):
 
     @staticmethod
     def get_previous_version(context: Context, lookup_key):
+        """Gets previous version of the table stored in Airflow metadata.
+
+        Args:
+            context (Context): Airflow context
+            lookup_key (_type_): Unique lookup key used to store values related to a specific table.
+
+        Returns:
+            int: Version number
+        """
         return context["ti"].xcom_pull(key=lookup_key, include_prior_dates=True)
 
     @staticmethod
     def set_version(context: Context, lookup_key, version):
+        """Sets a specific version number for a Databricks table to the Airflow metadata using
+        an existing lookup key.
+
+        Args:
+            context (Context): Airflow context
+            lookup_key (_type_): Unique lookup key used to store values related to a specific table.
+            version (int): Version number
+        """
         context["ti"].xcom_push(key=lookup_key, value=version)
 
     def _check_table_partitions(self) -> bool:
+        """Checks for the presence of the specified partition in the Databricks table.
+
+        Raises:
+            AirflowException
+
+        Returns:
+            bool: True if the partition value exists, False if not.
+        """
         if self.catalog is not None:
             complete_table_name = str(self.catalog + "." + self.schema + "." + self.table_name)
             self.log.info("Table name generated from arguments: %s", complete_table_name)
         else:
             raise AirflowException("Catalog name not specified, aborting query execution.")
-        table_partitions = [
-            partition_val[0]
-            for partition_val in self._generic_sql_sensor(f"SHOW PARTITIONS {complete_table_name}")
-        ]
-        self.log.info("Table partitions: %s", table_partitions)
-        self.log.info("Partition names: %s", self.partition_name.values())
-        for partition_col in self.partition_name.values():
-            if partition_col not in table_partitions:
-                raise AirflowException("Partition %s not found in %s", partition_col, complete_table_name)
         partitions_list = []
-        self.log.info(self.partition_name)
-        for col, partition_value in self.partition_name.items():
+        for partition_col, partition_value in self.partition_name.items():
             if isinstance(partition_value, (int, float, complex)):
-                partitions_list.append(f"""{col}={partition_value}""")
+                partitions_list.append(f"""{partition_col}={partition_value}""")
             else:
-                partitions_list.append(f"""{col}=\"{partition_value}\"""")
+                partitions_list.append(f"""{partition_col}=\"{partition_value}\"""")
         partitions = " AND ".join(partitions_list)
         partition_sql = f"SELECT 1 FROM {complete_table_name} WHERE {partitions}"
         result = self._generic_sql_sensor(partition_sql)
@@ -151,6 +174,17 @@ class DatabricksSQLSensor(BaseSensorOperator):
             return False
 
     def _check_table_changes(self, context: Context) -> bool:
+        """
+
+        Args:
+            context (Context): Airflow context
+
+        Raises:
+            AirflowException
+
+        Returns:
+            bool: True if a version number greater than or equal to current version has been detected.
+        """
         if self.catalog is not None:
             complete_table_name = str(self.catalog + "." + self.schema + "." + self.table_name)
             self.log.info("Table name generated from arguments: %s", complete_table_name)

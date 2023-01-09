@@ -25,6 +25,6 @@ DEFAULT_CONN_ID = "databricks_default"
 TIMESTAMP_TEST = datetime.now() - timedelta(days=30)
 
 # class TestDatabricksSQLSensor(unittest.TestCase):
-
-# @mock.path('airflow.providers.databricks.sensors.databricks.DatabricksSQLSensor')
-# def test_exec_
+#
+#     @mock.path('airflow.providers.databricks.sensors.databricks.DatabricksSQLSensor')
+#     def test_exec_
