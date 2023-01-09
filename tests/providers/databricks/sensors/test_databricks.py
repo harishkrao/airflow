@@ -17,13 +17,15 @@
 # under the License.
 #
 from __future__ import annotations
+
 import unittest
+from datetime import datetime, timedelta
 from unittest import mock
 
 from airflow.providers.databricks.sensors.databricks import DatabricksSQLSensor
+
 # from databricks.sql.types import Row
 
-from datetime import datetime, timedelta
 
 TASK_ID = "db-sensor"
 DEFAULT_CONN_ID = "databricks_default"
