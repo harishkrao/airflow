@@ -30,7 +30,7 @@ from airflow.sensors.base import BaseSensorOperator
 from airflow.utils.context import Context
 
 
-class DatabricksSQLSensor(BaseSensorOperator):
+class DatabricksSqlSensor(BaseSensorOperator):
     """
     Generic Databricks SQL sensor.
 
@@ -68,7 +68,7 @@ class DatabricksSQLSensor(BaseSensorOperator):
         handler: Callable[[Any], Any] = fetch_all_handler,
         db_sensor_type: str,
         timestamp: datetime = datetime.now() - timedelta(days=7),
-        caller: str = "DatabricksSQLSensor",
+        caller: str = "DatabricksSqlSensor",
         client_parameters: dict[str, Any] | None = None,
         **kwargs,
     ) -> None:
@@ -144,6 +144,15 @@ class DatabricksSQLSensor(BaseSensorOperator):
         """
         context["ti"].xcom_push(key=lookup_key, value=version)
 
+    def get_current_table_version(self, table_name, time_range):
+        change_sql = (
+            f"SELECT COUNT(version) as versions from "
+            f"(DESCRIBE HISTORY {table_name}) "
+            f"WHERE timestamp >= '{time_range}'"
+        )
+        result = self._generic_sql_sensor(change_sql)[0][0]
+        return result
+
     def _check_table_partitions(self) -> bool:
         """Checks for the presence of the specified partition in the Databricks table.
 
@@ -199,13 +208,10 @@ class DatabricksSQLSensor(BaseSensorOperator):
                 prev_version = prev_data
             elif prev_data is not None:
                 raise AirflowException("Incorrect type for previous XCom data: %s", type(prev_data))
-            change_sql = (
-                f"SELECT COUNT(version) as versions from "
-                f"(DESCRIBE HISTORY {complete_table_name}) "
-                f"WHERE timestamp >= '{self.timestamp}'"
+            version = self.get_current_table_version(
+                table_name=complete_table_name, time_range=self.timestamp
             )
-            version = self._generic_sql_sensor(change_sql)[0][0]
-            self.log.info("Version: %s", version)
+            self.log.info("Current table version: %s", version)
             result = prev_version <= version
             if prev_version != version:
                 self.set_version(lookup_key=lookup_key, version=version, context=context)

@@ -22,7 +22,11 @@ import unittest
 from datetime import datetime, timedelta
 from unittest import mock
 
-from airflow.providers.databricks.sensors.databricks import DatabricksSQLSensor
+import pytest
+
+from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
+from airflow.providers.databricks.sensors.databricks import DatabricksSqlSensor
+from airflow.utils.context import Context
 
 # from databricks.sql.types import Row
 
@@ -32,41 +36,53 @@ DEFAULT_CONN_ID = "databricks_default"
 DEFAULT_SCHEMA = "schema1"
 DEFAULT_CATALOG = "catalog1"
 DEFAULT_TABLE = "table1"
+PARTITION_SENSOR = "table_partition"
+DEFAULT_SQL_ENDPOINT = "sql_warehouse_default"
+CHANGES_SENSOR = "table_changes"
+PARTITIONS_SENSOR = "table_partition"
 
 TIMESTAMP_TEST = datetime.now() - timedelta(days=30)
 
-
-class TestDatabricksSQLSensor(unittest.TestCase):
-    @mock.patch("airflow.providers.databricks.sensors.databricks.DatabricksSqlHook")
-    def test_exec_success_sensor_find_new_events(self, db_mock_class):
-        sensor = DatabricksSQLSensor(
-            task_id=TASK_ID,
+class TestDatabricksSqlSensor:
+    def setup_method(self):
+        self.changes_sensor = DatabricksSqlSensor(
             databricks_conn_id=DEFAULT_CONN_ID,
+            sql_endpoint_name=DEFAULT_SQL_ENDPOINT,
+            task_id=TASK_ID,
+            table_name=DEFAULT_TABLE,
             schema=DEFAULT_SCHEMA,
             catalog=DEFAULT_CATALOG,
-            db_sensor_type="table_changes",
+            partition_name={"part_col": "part_val"},
+            db_sensor_type=CHANGES_SENSOR,
+            timestamp=TIMESTAMP_TEST
+        )
+
+        self.partition_sensor = DatabricksSqlSensor(
+            databricks_conn_id=DEFAULT_CONN_ID,
+            sql_endpoint_name=DEFAULT_SQL_ENDPOINT,
+            task_id=TASK_ID,
             table_name=DEFAULT_TABLE,
-            timestamp=TIMESTAMP_TEST,
+            schema=DEFAULT_SCHEMA,
+            catalog=DEFAULT_CATALOG,
+            partition_name={"part_col": "part_val"},
+            db_sensor_type=PARTITION_SENSOR,
+            timestamp=TIMESTAMP_TEST
         )
 
-        db_mock = db_mock_class.return_value
-        db_mock.get_table_version.return_value = 123
 
-        with mock.patch("airflow.providers.databricks.sensors.databricks.DatabricksSQLSensor") as mock_sensor:
-            mock_sensor.get_previous_version.return_value = 122
-            mock_sensor.set_version.return_value = None
-            result = sensor.poke(None)
-            assert result
+    @mock.patch.object(DatabricksSqlSensor, "_check_table_changes", side_effect=(True,))
+    def test_poke_changes_success(self, mock_poll_table_changes):
+        assert self.changes_sensor.poke({}) is True
 
-        db_mock_class.assert_called_once_with(
-            databricks_conn_id="databricks_default",
-            catalog="catalog1",
-            schema="schema1",
-            table_name="table1",
-            db_sensor_type="table_changes",
-            timestamp=datetime.now() - timedelta(days=30),
-        )
+    @mock.patch.object(DatabricksSqlSensor, "_check_table_changes", side_effect=(False,))
+    def test_poke_changes_failure(self, mock_poll_table_changes):
+        assert self.changes_sensor.poke({}) is False
+    
+    @mock.patch.object(DatabricksSqlSensor, "_check_table_partitions", side_effect=(True,))
+    def test_poke_partitions_success(self, mock_poll_table_changes):
+        assert self.partition_sensor.poke({}) is True
 
-        db_mock.get_table_version.assert_called_once_with(
-            DEFAULT_CONN_ID, DEFAULT_CATALOG, DEFAULT_TABLE, DEFAULT_SCHEMA
-        )
+    @mock.patch.object(DatabricksSqlSensor, "_check_table_partitions", side_effect=(False,))
+    def test_poke_partitions_failure(self, mock_poll_table_changes):
+        assert self.partition_sensor.poke({}) is False
+     
