@@ -21,11 +21,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from unittest import mock
 
-
 from airflow.providers.databricks.sensors.databricks import DatabricksSqlSensor
-
-# from databricks.sql.types import Row
-
 
 TASK_ID = "db-sensor"
 DEFAULT_CONN_ID = "databricks_default"
