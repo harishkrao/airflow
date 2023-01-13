@@ -18,15 +18,11 @@
 #
 from __future__ import annotations
 
-import unittest
 from datetime import datetime, timedelta
 from unittest import mock
 
-import pytest
 
-from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
 from airflow.providers.databricks.sensors.databricks import DatabricksSqlSensor
-from airflow.utils.context import Context
 
 # from databricks.sql.types import Row
 
@@ -43,6 +39,7 @@ PARTITIONS_SENSOR = "table_partition"
 
 TIMESTAMP_TEST = datetime.now() - timedelta(days=30)
 
+
 class TestDatabricksSqlSensor:
     def setup_method(self):
         self.changes_sensor = DatabricksSqlSensor(
@@ -54,7 +51,7 @@ class TestDatabricksSqlSensor:
             catalog=DEFAULT_CATALOG,
             partition_name={"part_col": "part_val"},
             db_sensor_type=CHANGES_SENSOR,
-            timestamp=TIMESTAMP_TEST
+            timestamp=TIMESTAMP_TEST,
         )
 
         self.partition_sensor = DatabricksSqlSensor(
@@ -66,9 +63,8 @@ class TestDatabricksSqlSensor:
             catalog=DEFAULT_CATALOG,
             partition_name={"part_col": "part_val"},
             db_sensor_type=PARTITION_SENSOR,
-            timestamp=TIMESTAMP_TEST
+            timestamp=TIMESTAMP_TEST,
         )
-
 
     @mock.patch.object(DatabricksSqlSensor, "_check_table_changes", side_effect=(True,))
     def test_poke_changes_success(self, mock_poll_table_changes):
@@ -77,7 +73,7 @@ class TestDatabricksSqlSensor:
     @mock.patch.object(DatabricksSqlSensor, "_check_table_changes", side_effect=(False,))
     def test_poke_changes_failure(self, mock_poll_table_changes):
         assert self.changes_sensor.poke({}) is False
-    
+
     @mock.patch.object(DatabricksSqlSensor, "_check_table_partitions", side_effect=(True,))
     def test_poke_partitions_success(self, mock_poll_table_changes):
         assert self.partition_sensor.poke({}) is True
@@ -85,4 +81,3 @@ class TestDatabricksSqlSensor:
     @mock.patch.object(DatabricksSqlSensor, "_check_table_partitions", side_effect=(False,))
     def test_poke_partitions_failure(self, mock_poll_table_changes):
         assert self.partition_sensor.poke({}) is False
-     
