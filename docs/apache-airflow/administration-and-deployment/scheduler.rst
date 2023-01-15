@@ -59,6 +59,14 @@ In the UI, it appears as if Airflow is running your tasks a day **late**
 
     You should refer to :doc:`../core-concepts/dag-run` for details on scheduling a DAG.
 
+.. note::
+    The scheduler is designed for high throughput. This is an informed design decision to achieve scheduling
+    tasks as soon as possible. The scheduler checks how many free slots available in a pool and schedule at most that number of tasks instances in one iteration.
+    This means that task priority will only come in to effect when there are more scheduled tasks
+    waiting than the queue slots. Thus there can be cases where low priority tasks will be schedule before high priority tasks if they share the same batch.
+    For more read about that you can reference `this GitHub discussion <https://github.com/apache/airflow/discussions/28809>`__.
+
+
 DAG File Processing
 -------------------
 
@@ -280,7 +288,7 @@ When you know what your resource usage is, the improvements that you can conside
   parsed continuously so optimizing that code might bring tremendous improvements, especially if you try
   to reach out to some external databases etc. while parsing DAGs (this should be avoided at all cost).
   The :ref:`best_practices/top_level_code` explains what are the best practices for writing your top-level
-  Python code. The :ref:`best_practices/reducing_dag_complexity` document provides some ares that you might
+  Python code. The :ref:`best_practices/reducing_dag_complexity` document provides some areas that you might
   look at when you want to reduce complexity of your code.
 * improve utilization of your resources. This is when you have a free capacity in your system that
   seems underutilized (again CPU, memory I/O, networking are the prime candidates) - you can take
