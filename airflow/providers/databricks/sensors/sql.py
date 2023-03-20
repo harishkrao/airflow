@@ -23,8 +23,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from airflow.providers.common.sql.hooks.sql import fetch_all_handler
-from airflow.sensors.base import BaseSensorOperator
 from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
+from airflow.sensors.base import BaseSensorOperator
 
 if TYPE_CHECKING:
     from airflow.utils.context import Context

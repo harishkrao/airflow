@@ -19,18 +19,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from unittest import mock
 from unittest.mock import patch
 
 import pytest
 
 from airflow.exceptions import AirflowException
-from airflow.models import DAG, Connection
-from airflow.providers.common.sql.hooks.sql import fetch_all_handler
-from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
+from airflow.models import DAG
 from airflow.providers.databricks.sensors.sql import DatabricksSqlSensor
-from airflow.utils import db, timezone
-from airflow.utils.session import provide_session
+from airflow.utils import timezone
 
 TASK_ID = "db-sensor"
 DEFAULT_CONN_ID = "databricks_default"

@@ -30,12 +30,10 @@ succeeds, else it times out.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from airflow import DAG
-from airflow.providers.databricks.sensors.partition import DatabricksPartitionSensor
 from airflow.providers.databricks.sensors.sql import DatabricksSqlSensor
-from airflow.providers.databricks.sensors.table_changes import DatabricksTableChangesSensor
 
 # [docs]
 ENV_ID = os.environ.get("SYSTEM_TESTS_ENV_ID")
