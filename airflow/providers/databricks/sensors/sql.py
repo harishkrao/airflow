@@ -23,14 +23,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from airflow.providers.common.sql.hooks.sql import fetch_all_handler
-from airflow.providers.common.sql.sensors.sql import SqlSensor
+from airflow.sensors.base import BaseSensorOperator
 from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
 
 if TYPE_CHECKING:
     from airflow.utils.context import Context
 
 
-class DatabricksSqlSensor(SqlSensor):
+class DatabricksSqlSensor(BaseSensorOperator):
     """
     Sensor to execute SQL statements on a Delta table via Databricks.
 
@@ -81,7 +81,6 @@ class DatabricksSqlSensor(SqlSensor):
         client_parameters: dict[str, Any] | None = None,
         **kwargs,
     ) -> None:
-        super().__init__(**kwargs)
         self.databricks_conn_id = databricks_conn_id
         self._http_path = http_path
         self._sql_endpoint_name = sql_endpoint_name
@@ -94,6 +93,7 @@ class DatabricksSqlSensor(SqlSensor):
         self.client_parameters = client_parameters or {}
         self.hook_params = kwargs.pop("hook_params", {})
         self.handler = handler
+        super().__init__(**kwargs)
 
     def _get_hook(self) -> DatabricksSqlHook:
         return DatabricksSqlHook(
